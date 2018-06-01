@@ -1,0 +1,7 @@
+[package]
+name = "pcs_protocol"
+version = "0.1.0"
+authors = ["Tom Almeida <tommoa256@gmail.com>"]
+
+[dependencies]
+byteorder = "*"
