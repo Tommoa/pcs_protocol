@@ -1,11 +1,13 @@
 extern crate byteorder;
-use byteorder::{ NetworkEndian, ReadBytesExt, WriteBytesExt, ByteOrder };
+use byteorder::{ LittleEndian, ReadBytesExt, WriteBytesExt };
 
 use std::io;
 
+type Endian = LittleEndian;
+
 pub trait SerDe {
-    fn serialize(&self, &mut Vec<u8>);
-    fn deserialize<T: io::Read>([u8;2], &mut T) -> io::Result<Self>
+    fn serialize<T: io::Write>(&self, to: &mut T) -> io::Result<()>;
+    fn deserialize<T: io::Read>(&mut T) -> io::Result<Self>
         where Self: Sized;
 }
 
@@ -22,43 +24,44 @@ pub enum MsgType {
     Done(MsgDone)
 }
 impl SerDe for MsgType {
-    fn serialize(&self, v: &mut Vec<u8>) {
+    fn serialize<T: io::Write>(&self, to: &mut T) -> io::Result<()> {
         match self {
-            MsgType::Verify => v.push(0),
+            MsgType::Verify => to.write_u8(0)?,
             MsgType::Hash(hash) => {
-                v.push(1);
-                v.extend_from_slice(hash);
+                to.write_u8(1)?;
+                to.write(hash)?;
             },
-            MsgType::Decline => v.push(2),
-            MsgType::Accept => v.push(3),
+            MsgType::Decline => to.write_u8(2)?,
+            MsgType::Accept => to.write_u8(3)?,
             MsgType::Need(inner) => {
-                v.push(4);
-                inner.serialize(v);
+                to.write_u8(4)?;
+                inner.serialize(to)?;
             },
             MsgType::Status(inner) => {
-                v.push(5);
-                inner.serialize(v);
+                to.write_u8(5)?;
+                inner.serialize(to)?;
             },
             MsgType::Give(inner) => {
-                v.push(6);
-                inner.serialize(v);
+                to.write_u8(6)?;
+                inner.serialize(to)?;
             },
             MsgType::Mark(inner) => {
-                v.push(7);
-                inner.serialize(v);
+                to.write_u8(7)?;
+                inner.serialize(to)?;
             },
             MsgType::Marking(inner) => {
-                v.push(8);
-                inner.serialize(v);
+                to.write_u8(8)?;
+                inner.serialize(to)?;
             },
             MsgType::Done(inner) => {
-                v.push(9);
-                inner.serialize(v);
+                to.write_u8(9)?;
+                inner.serialize(to)?;
             },
         }
+        Ok(())
     }
-    fn deserialize<T: io::Read>(type_field_: [u8;2], from: &mut T) -> io::Result<MsgType> {
-        let type_field = NetworkEndian::read_u16(&type_field_);
+    fn deserialize<T: io::Read>(from: &mut T) -> io::Result<MsgType> {
+        let type_field = from.read_u16::<Endian>()?;
         match type_field {
             0 => Ok(MsgType::Verify),
             1 => {
@@ -68,12 +71,12 @@ impl SerDe for MsgType {
             },
             2 => Ok(MsgType::Decline),
             3 => Ok(MsgType::Accept),
-            4 => Ok(MsgType::Need(MsgNeed::deserialize(type_field_, from)?)),
-            5 => Ok(MsgType::Status(MsgStatus::deserialize(type_field_, from)?)),
-            6 => Ok(MsgType::Give(MsgGive::deserialize(type_field_, from)?)),
-            7 => Ok(MsgType::Mark(MsgMark::deserialize(type_field_, from)?)),
-            8 => Ok(MsgType::Marking(MsgMarking::deserialize(type_field_, from)?)),
-            9 => Ok(MsgType::Done(MsgDone::deserialize(type_field_, from)?)),
+            4 => Ok(MsgType::Need(MsgNeed::deserialize(from)?)),
+            5 => Ok(MsgType::Status(MsgStatus::deserialize(from)?)),
+            6 => Ok(MsgType::Give(MsgGive::deserialize(from)?)),
+            7 => Ok(MsgType::Mark(MsgMark::deserialize(from)?)),
+            8 => Ok(MsgType::Marking(MsgMarking::deserialize(from)?)),
+            9 => Ok(MsgType::Done(MsgDone::deserialize(from)?)),
             _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Encountered unknown type field"))
         }
     }
@@ -89,36 +92,37 @@ pub enum MarkResult {
     Blocked(u64)
 }
 impl SerDe for MarkResult {
-    fn serialize(&self, v: &mut Vec<u8>) {
+    fn serialize<T: io::Write>(&self, to: &mut T) -> io::Result<()> {
         match self {
-            MarkResult::Fail => v.push(0),
+            MarkResult::Fail => to.write_u8(0)?,
             MarkResult::Success(s, ns) => {
-                v.push(1);
-                v.write_i32::<NetworkEndian>(*s);
-                v.write_i32::<NetworkEndian>(*ns);
+                to.write_u8(1)?;
+                to.write_i32::<Endian>(*s)?;
+                to.write_i32::<Endian>(*ns)?;
             },
-            MarkResult::CE => v.push(2),
-            MarkResult::RTE => v.push(3),
-            MarkResult::TLE => v.push(4),
+            MarkResult::CE => to.write_u8(2)?,
+            MarkResult::RTE => to.write_u8(3)?,
+            MarkResult::TLE => to.write_u8(4)?,
             MarkResult::Blocked(n) => {
-                v.push(5);
-                v.write_u64::<NetworkEndian>(*n);
+                to.write_u8(5)?;
+                to.write_u64::<Endian>(*n)?;
             },
         }
+        Ok(())
     }
-    fn deserialize<T: io::Read>(_: [u8;2], from: &mut T) -> io::Result<MarkResult> {
+    fn deserialize<T: io::Read>(from: &mut T) -> io::Result<MarkResult> {
         Ok(match from.read_u8()? {
             0 => MarkResult::Fail,
             1 => {
-                let s = from.read_i32::<NetworkEndian>()?;
-                let ns = from.read_i32::<NetworkEndian>()?;
+                let s = from.read_i32::<Endian>()?;
+                let ns = from.read_i32::<Endian>()?;
                 MarkResult::Success(s, ns)
             }
             2 => MarkResult::CE,
             3 => MarkResult::RTE,
             4 => MarkResult::TLE,
             5 => {
-                MarkResult::Blocked(from.read_u64::<NetworkEndian>()?)
+                MarkResult::Blocked(from.read_u64::<Endian>()?)
             },
             _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown result type"))
         })
@@ -129,13 +133,13 @@ pub struct MsgNeed {
     pub questions:  u32
 }
 impl SerDe for MsgNeed {
-    fn serialize(&self, v: &mut Vec<u8>) {
-        v.write_u32::<NetworkEndian>(self.batch);
-        v.write_u32::<NetworkEndian>(self.questions);
+    fn serialize<T: io::Write>(&self, to: &mut T) -> io::Result<()> {
+        to.write_u32::<Endian>(self.batch)?;
+        to.write_u32::<Endian>(self.questions)
     }
-    fn deserialize<T: io::Read>(_: [u8;2], from: &mut T) -> io::Result<MsgNeed> {
-        let batch = from.read_u32::<NetworkEndian>()?;
-        let questions = from.read_u32::<NetworkEndian>()?;
+    fn deserialize<T: io::Read>(from: &mut T) -> io::Result<MsgNeed> {
+        let batch = from.read_u32::<Endian>()?;
+        let questions = from.read_u32::<Endian>()?;
         Ok(MsgNeed {
             batch:      batch,
             questions:  questions
@@ -147,13 +151,13 @@ pub struct MsgStatus {
     pub batch:      u32,
 }
 impl SerDe for MsgStatus {
-    fn serialize(&self, v: &mut Vec<u8>) {
-        v.write_u8(self.ok as u8);
-        v.write_u32::<NetworkEndian>(self.batch);
+    fn serialize<T: io::Write>(&self, to: &mut T) -> io::Result<()> {
+        to.write_u8(self.ok as u8)?;
+        to.write_u32::<Endian>(self.batch)
     }
-    fn deserialize<T: io::Read>(_: [u8;2], from: &mut T) -> io::Result<MsgStatus> {
+    fn deserialize<T: io::Read>(from: &mut T) -> io::Result<MsgStatus> {
         let ok = from.read_u8()? > 0;
-        let batch = from.read_u32::<NetworkEndian>()?;
+        let batch = from.read_u32::<Endian>()?;
         Ok(MsgStatus {
             ok:     ok,
             batch:  batch
@@ -166,19 +170,20 @@ pub struct MsgGive {
     pub text:       String,
 }
 impl SerDe for MsgGive {
-    fn serialize(&self, v: &mut Vec<u8>) {
-        v.write_u16::<NetworkEndian>(self.sequence);
-        v.write_u32::<NetworkEndian>(self.batch);
-        let mut s = self.text.clone().into_bytes();
-        v.write_u64::<NetworkEndian>(s.len() as u64);
-        v.append(&mut s);
+    fn serialize<T: io::Write>(&self, to: &mut T) -> io::Result<()> {
+        to.write_u16::<Endian>(self.sequence)?;
+        to.write_u32::<Endian>(self.batch)?;
+        let s = self.text.clone().into_bytes();
+        to.write_u64::<Endian>(s.len() as u64)?;
+        to.write(&s)?;
+        Ok(())
     }
-    fn deserialize<T: io::Read>(_: [u8;2], from: &mut T) -> io::Result<MsgGive> {
-        let sequence = from.read_u16::<NetworkEndian>()?;
-        let batch = from.read_u32::<NetworkEndian>()?;
-        let len = from.read_u64::<NetworkEndian>()?;
+    fn deserialize<T: io::Read>(from: &mut T) -> io::Result<MsgGive> {
+        let sequence = from.read_u16::<Endian>()?;
+        let batch = from.read_u32::<Endian>()?;
+        let len = from.read_u64::<Endian>()?;
         let mut v = vec![0u8; len as usize];
-        from.read(&mut v);
+        from.read(&mut v)?;
         let s = match String::from_utf8(v) {
             Ok(s) => s,
             Err(err) => 
@@ -199,39 +204,40 @@ pub struct MsgMark {
     pub lang:       String,
 }
 impl SerDe for MsgMark {
-    fn serialize(&self, v: &mut Vec<u8>) {
-        v.write_u16::<NetworkEndian>(self.sequence);
-        v.write_u32::<NetworkEndian>(self.batch);
+    fn serialize<T: io::Write>(&self, to: &mut T) -> io::Result<()> {
+        to.write_u16::<Endian>(self.sequence)?;
+        to.write_u32::<Endian>(self.batch)?;
         if let Some(time) = self.time {
-            v.write_u8(1);
-            v.write_u64::<NetworkEndian>(time);
+            to.write_u8(1)?;
+            to.write_u64::<Endian>(time)?;
         } else {
-            v.write_u8(0);
+            to.write_u8(0)?;
         }
-        let mut s = self.text.clone().into_bytes();
-        v.write_u64::<NetworkEndian>(s.len() as u64);
-        v.append(&mut s);
-        let mut s = self.lang.clone().into_bytes();
-        v.write_u64::<NetworkEndian>(s.len() as u64);
-        v.append(&mut s);
+        let s = self.text.clone().into_bytes();
+        to.write_u64::<Endian>(s.len() as u64)?;
+        to.write(&s)?;
+        let s = self.lang.clone().into_bytes();
+        to.write_u64::<Endian>(s.len() as u64)?;
+        to.write(&s)?;
+        Ok(())
     }
-    fn deserialize<T: io::Read>(_: [u8;2], from: &mut T) -> io::Result<MsgMark> {
-        let sequence = from.read_u16::<NetworkEndian>()?;
-        let batch = from.read_u32::<NetworkEndian>()?;
+    fn deserialize<T: io::Read>(from: &mut T) -> io::Result<MsgMark> {
+        let sequence = from.read_u16::<Endian>()?;
+        let batch = from.read_u32::<Endian>()?;
         let time = if from.read_u8()? == 1 {
-            Some(from.read_u64::<NetworkEndian>()?)
+            Some(from.read_u64::<Endian>()?)
         } else { None };
-        let len = from.read_u64::<NetworkEndian>()?;
+        let len = from.read_u64::<Endian>()?;
         let mut v = vec![0u8; len as usize];
-        from.read(&mut v);
+        from.read(&mut v)?;
         let s = match String::from_utf8(v) {
             Ok(s) => s,
             Err(err) => 
                 return Err(io::Error::new(io::ErrorKind::InvalidData, err))
         };
-        let len = from.read_u64::<NetworkEndian>()?;
+        let len = from.read_u64::<Endian>()?;
         let mut v = vec![0u8; len as usize];
-        from.read(&mut v);
+        from.read(&mut v)?;
         let lang = match String::from_utf8(v) {
             Ok(s) => s,
             Err(err) => 
@@ -247,44 +253,36 @@ impl SerDe for MsgMark {
     }
 }
 pub struct MsgMarking {
-    pub sequence:   u16,
     pub batch:      u32,
 }
 impl SerDe for MsgMarking {
-    fn serialize(&self, v: &mut Vec<u8>) {
-        v.write_u16::<NetworkEndian>(self.sequence);
-        v.write_u32::<NetworkEndian>(self.batch);
+    fn serialize<T: io::Write>(&self, to: &mut T) -> io::Result<()> {
+        to.write_u32::<Endian>(self.batch)
     }
-    fn deserialize<T: io::Read>(_: [u8;2], from: &mut T) -> io::Result<MsgMarking> {
-        let sequence = from.read_u16::<NetworkEndian>()?;
-        let batch = from.read_u32::<NetworkEndian>()?;
+    fn deserialize<T: io::Read>(from: &mut T) -> io::Result<MsgMarking> {
+        let batch = from.read_u32::<Endian>()?;
         Ok(MsgMarking {
-            sequence:   sequence,
             batch:      batch
         })
     }
 }
 pub struct MsgDone {
-    pub sequence:   u16,
     pub batch:      u32,
     pub test:       u64,
     pub result:     MarkResult,
 }
 impl SerDe for MsgDone {
-    fn serialize(&self, v: &mut Vec<u8>) {
-        v.write_u16::<NetworkEndian>(self.sequence);
-        v.write_u32::<NetworkEndian>(self.batch);
-        v.write_u64::<NetworkEndian>(self.test);
-        self.result.serialize(v);
+    fn serialize<T: io::Write>(&self, to: &mut T) -> io::Result<()> {
+        to.write_u32::<Endian>(self.batch)?;
+        to.write_u64::<Endian>(self.test)?;
+        self.result.serialize(to)
     }
-    fn deserialize<T: io::Read>(pass: [u8;2], from: &mut T) -> io::Result<MsgDone> {
-        let sequence = from.read_u16::<NetworkEndian>()?;
-        let batch = from.read_u32::<NetworkEndian>()?;
-        let test_num = from.read_u64::<NetworkEndian>()?;
-        let result = MarkResult::deserialize(pass, from)?;
+    fn deserialize<T: io::Read>(from: &mut T) -> io::Result<MsgDone> {
+        let batch = from.read_u32::<Endian>()?;
+        let test_num = from.read_u64::<Endian>()?;
+        let result = MarkResult::deserialize(from)?;
         Ok(MsgDone {
-            sequence:   sequence,
-            batch:      batch,
+ batch:      batch,
             test:       test_num,
             result:     result
         })
