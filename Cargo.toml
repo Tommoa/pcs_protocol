@@ -3,6 +3,10 @@ name = "pcs_protocol"
 version = "0.1.0"
 authors = ["Tom Almeida <tommoa256@gmail.com>"]
 license = "MIT"
+build = "build.rs"
 
 [dependencies]
-byteorder = "*"
+protobuf = "1.7.3"
+
+[build-dependencies]
+protoc-rust = "1.5"

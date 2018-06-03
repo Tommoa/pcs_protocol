@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+message Verify { }
+message Decline { }
+message Accept { }
+message Mark {
+    repeated uint32 question_hash = 1 [packed=true];
+    uint32 batch = 2;
+    string answer = 3;
+}
+message Result {
+    uint32 batch = 1;
+    uint32 test = 2;
+    enum RESULT {
+        FAIL = 0;
+	SUCCESS = 1;
+	CE = 2;
+	RTE = 3;
+	TLE = 4;
+	BLOCKED = 5;
+    }
+    RESULT result = 3;
+    int64 time_sec = 4;
+    int64 time_usec = 5;
+    uint32 blocked = 6;
+}
